@@ -24,14 +24,14 @@ use tracing::{debug, error, info, warn};
 use crate::prover::ProverEvent;
 
 pub struct Client {
-    pub address: Address<Testnet3>,
+    pub address: String,
     server: String,
     sender: Arc<Sender<StratumMessage>>,
     receiver: Arc<Mutex<Receiver<StratumMessage>>>,
 }
 
 impl Client {
-    pub fn init(address: Address<Testnet3>, server: String) -> Arc<Self> {
+    pub fn init(address: String, server: String) -> Arc<Self> {
         let (sender, receiver) = mpsc::channel(1024);
         Arc::new(Self {
             address,

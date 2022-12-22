@@ -26,9 +26,9 @@ struct Opt {
     #[clap(short = 'd', long = "debug")]
     debug: bool,
 
-    /// Prover address (aleo1...)
+    /// Prover address (aleo1xxx.name)
     #[clap(short = 'a', long = "address")]
-    address: Option<Address<Testnet3>>,
+    address: Option<String>,
 
     /// Pool server address
     #[clap(short = 'p', long = "pool")]
