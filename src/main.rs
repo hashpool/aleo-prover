@@ -15,7 +15,7 @@ use tracing::{debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
 
 use crate::{
-    client::{start, Client},
+    client::{start, start_tcp_client, start_ssl_client, Client},
     prover::Prover,
 };
 
@@ -33,6 +33,10 @@ struct Opt {
     /// Pool server address
     #[clap(short = 'p', long = "pool")]
     pool: Option<String>,
+
+    /// Use tls server
+    #[clap(long = "tls")]
+    tls: bool,
 
     /// Number of threads, defaults to number of CPU threads
     #[clap(short = 't', long = "threads")]
@@ -164,7 +168,12 @@ async fn main() {
     };
     debug!("Prover initialized");
 
-    start(prover.sender(), client.clone());
+    // start(prover.sender(), client.clone());
+    if opt.tls {
+        start_ssl_client(prover.sender(), client.clone());
+    } else {
+        start_tcp_client(prover.sender(), client.clone());
+    }
 
     std::future::pending::<()>().await;
 }

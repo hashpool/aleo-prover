@@ -291,6 +291,7 @@ impl Prover {
                                 break;
                             }
                             let nonce = thread_rng().next_u64();
+                            // info!("---------Nonce: {}", nonce);
                             if let Ok(Ok(solution)) = task::spawn_blocking(move || {
                                 tp.install(|| {
                                     coinbase_puzzle.prove(

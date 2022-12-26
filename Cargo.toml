@@ -59,6 +59,9 @@ features = [
 version = "0.7.4"
 features = ["codec"]
 
+[dependencies.tokio-native-tls]
+version = "0.3.0"
+
 [dependencies.serde_json]
 version = "1.0.89"
 features = ["preserve_order"]

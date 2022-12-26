@@ -87,6 +87,7 @@ dependencies = [
  "snarkvm",
  "snarkvm-algorithms",
  "tokio",
+ "tokio-native-tls",
  "tokio-stream",
  "tokio-util",
  "tracing",
