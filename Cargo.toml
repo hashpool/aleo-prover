@@ -70,7 +70,7 @@ features = ["preserve_order"]
 cuda = ["snarkvm/cuda"]
 
 [profile.dev]
-opt-level = 1
+opt-level = 0
 debug-assertions = false
 
 [profile.release]

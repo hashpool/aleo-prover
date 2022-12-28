@@ -2,8 +2,9 @@ use std::{
     collections::VecDeque,
     str::FromStr,
     sync::{
-        atomic::{AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, AtomicI8, Ordering},
         Arc,
+        Mutex,
     },
     time::Duration,
 };
@@ -24,6 +25,7 @@ use tokio::{sync::mpsc, task};
 use tracing::{debug, error, info, warn};
 
 use crate::client::Client;
+use bytes::{BytesMut, BufMut};
 
 pub struct Prover {
     thread_pools: Arc<Vec<Arc<ThreadPool>>>,
@@ -37,11 +39,14 @@ pub struct Prover {
     invalid_shares: Arc<AtomicU32>,
     current_proof_target: Arc<AtomicU64>,
     coinbase_puzzle: CoinbasePuzzle<Testnet3>,
+    nonce1: Arc<Mutex<BytesMut>>,
+    nonce2_len: Arc<AtomicI8>,
 }
 
 #[allow(clippy::large_enum_variant)]
 pub enum ProverEvent {
     NewTarget(u64),
+    NewNonce1(String, usize),
     NewWork(u32, String, String),
     Result(bool, Option<String>),
 }
@@ -77,8 +82,7 @@ impl Prover {
                 builder.thread_name(move |idx| format!("ap-cpu-{}-{}", index, idx))
             } else {
                 builder.thread_name(move |idx| format!("ap-cuda-{}-{}", index, idx))
-            }
-            .build()?;
+            }.build()?;
             thread_pools.push(Arc::new(pool));
         }
         info!(
@@ -110,6 +114,8 @@ impl Prover {
             invalid_shares: Default::default(),
             current_proof_target: Default::default(),
             coinbase_puzzle,
+            nonce1: Arc::new(Mutex::new(BytesMut::new())),
+            nonce2_len: Default::default(),
         });
 
         let p = prover.clone();
@@ -119,16 +125,18 @@ impl Prover {
                     ProverEvent::NewTarget(target) => {
                         p.new_target(target);
                     }
+                    ProverEvent::NewNonce1(nonce1, nonce2_len) => {
+                        p.new_nonce1(nonce1, nonce2_len);
+                    }
                     ProverEvent::NewWork(epoch_number, epoch_challenge, address) => {
                         p.new_work(
                             epoch_number,
                             EpochChallenge::<Testnet3>::from_bytes_le(
                                 &*hex::decode(epoch_challenge.as_bytes()).unwrap(),
                             )
-                            .unwrap(),
+                                .unwrap(),
                             Address::<Testnet3>::from_str(&address).unwrap(),
-                        )
-                        .await;
+                        ).await;
                     }
                     ProverEvent::Result(success, error) => {
                         p.result(success, error).await;
@@ -244,6 +252,15 @@ impl Prover {
         info!("New proof target: {}", proof_target);
     }
 
+    fn new_nonce1(&self, nonce1: String, nonce2_len: usize) {
+        let bytes = hex::decode(nonce1.clone()).unwrap();
+        let nonce1_temp = self.nonce1.clone();
+        let mut nonce1_bytes = nonce1_temp.lock().unwrap();
+        nonce1_bytes.put(&bytes[..]);
+        self.nonce2_len.store(nonce2_len as i8, Ordering::SeqCst);
+        info!("New nonce1: {} nonce2 len: {}", nonce1, nonce2_len);
+    }
+
     async fn new_work(&self, epoch_number: u32, epoch_challenge: EpochChallenge<Testnet3>, address: Address<Testnet3>) {
         let last_epoch_number = self.current_epoch.load(Ordering::SeqCst);
         if epoch_number <= last_epoch_number && epoch_number != 0 {
@@ -259,6 +276,14 @@ impl Prover {
         let total_proofs = self.total_proofs.clone();
         let cuda = self.cuda.clone();
         let coinbase_puzzle = self.coinbase_puzzle.clone();
+        let mut nonce_bytes = [0u8; 8];
+        let nonce1 = self.nonce1.lock().unwrap();
+        let mut nonce1_len = nonce1.len();
+        if nonce1_len > 0 && nonce1_len <= 4 {
+            nonce_bytes[..nonce1_len].copy_from_slice(&nonce1);
+        } else {
+            nonce1_len = 0;
+        }
 
         task::spawn(async move {
             let _ = task::spawn(async move {
@@ -290,8 +315,10 @@ impl Prover {
                                 );
                                 break;
                             }
-                            let nonce = thread_rng().next_u64();
-                            // info!("---------Nonce: {}", nonce);
+                            // let nonce = thread_rng().next_u64();
+                            thread_rng().fill_bytes(&mut nonce_bytes[nonce1_len..]);
+                            let nonce = u64::from_le_bytes(nonce_bytes);
+                            // info!("---------Nonce: {} {}", hex::encode(nonce_bytes),nonce);
                             if let Ok(Ok(solution)) = task::spawn_blocking(move || {
                                 tp.install(|| {
                                     coinbase_puzzle.prove(
@@ -301,8 +328,7 @@ impl Prover {
                                         Option::from(current_proof_target.load(Ordering::SeqCst)),
                                     )
                                 })
-                            })
-                            .await
+                            }).await
                             {
                                 if epoch_number != current_epoch.load(Ordering::SeqCst) {
                                     debug!(

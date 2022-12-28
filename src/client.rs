@@ -368,6 +368,15 @@ pub async fn io_message_process_loop<T: AsyncRead + AsyncWrite + std::marker::Un
                             sleep(Duration::from_secs(5)).await;
                             return Ok(());
                         }
+                        if let Some(nonce1) = array.get(1) {
+                            if let Some(nonce1) = nonce1.downcast_ref::<String>() {
+                                if let Err(e) = prover_sender.send(ProverEvent::NewNonce1(nonce1.to_string(), 8 - nonce1.len()/2)).await {
+                                    error!("Error sending nonce1 to prover: {}", e);
+                                } else {
+                                    debug!("Sent nonce1 to prover");
+                                }
+                            }
+                        }
                     }
                     None => {
                         error!("No handshake response");
